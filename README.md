@@ -6,3 +6,4 @@ This is the repository for my master thesis it consists of:
 - [scripts](scripts) bash scripts used to train the scripts on a bash environment
 
 
+I made use of the deep learning framework [Chainer](http://chainer.org/)
