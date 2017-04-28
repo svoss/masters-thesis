@@ -91,3 +91,4 @@ ENV/
 *.cache/
 data/
 config.ini
+*.idea/
