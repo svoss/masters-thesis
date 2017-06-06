@@ -92,3 +92,4 @@ ENV/
 data/
 config.ini
 *.idea/
+bash/

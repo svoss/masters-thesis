@@ -1,0 +1,2 @@
+/home/stijn/Documents/masters-thesis/env/bin/python experiments/preliminary/test_model.py --gpu=0 --batch-size=128 --lr=0.06 --epochs=25 --ds-parts=vegatarian --track-name=test-max-vegetarian --recipe-type=max --acc-val --acc-train --momentum=0 --take-model-snapshot
+/home/stijn/Documents/masters-thesis/env/bin/python experiments/preliminary/test_model.py --gpu=0 --batch-size=128 --lr=0.06 --epochs=25 --ds-parts=cuisine --track-name=test-max-cuisine --recipe-type=max --acc-val --acc-train --momentum=0 --take-model-snapshot

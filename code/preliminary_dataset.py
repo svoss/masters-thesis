@@ -59,9 +59,10 @@ def _map_to_new_voc(Y, mapping):
         return None
 
 
-def get_preliminary_dataset(dataset_url, case_sensitive=True, digits=True, others="%.&[]()%!~-+ ", cusines=CUISINES,
-                  vegetarian=VEGAN, meat=MEAT, name_th=5, max_text_size=128, max_recipe_size=32):
-    function_str = ".".join([str(l) for l in locals()])
+def get_preliminary_dataset(dataset_url, case_sensitive=True, digits=True, others="%.&[]()!~-+ ", cusines=CUISINES,
+                  vegetarian=VEGAN, meat=MEAT, name_th=5, max_text_size=128, max_recipe_size=32,test=False):
+    function_str = ".".join([str(v) for k,v in locals().iteritems()])
+
     npz_file = os.path.join(get_cache_folder(), hashlib.md5(function_str).hexdigest() + ".npz")
     if not os.path.exists(npz_file):
         char2int, int2char = create_alphabet(case_sensitive, digits, others)
@@ -131,6 +132,13 @@ def get_preliminary_dataset(dataset_url, case_sensitive=True, digits=True, other
         Y_cuisine = np.array(Y_cuisine, dtype=np.int8)
         Y_vegetarian = np.array(Y_vegetarian, dtype=np.int8)
 
+        if test:
+            X_char = X_char[:1000]
+            X_words = X_words[:1000]
+            Y_names = Y_names[:1000]
+            Y_cuisine = Y_cuisine[:1000]
+            Y_vegetarian = Y_vegetarian[:1000]
+
         int2char = np.array(char_voc, dtype=np.unicode_)
         voc_ingredients = np.array(voc_ingredients, dtype=np.unicode_)
         voc_names = np.array(voc_names, dtype=np.unicode_)
@@ -150,22 +158,28 @@ def get_preliminary_dataset(dataset_url, case_sensitive=True, digits=True, other
     return (X_char, X_words), (Y_names, Y_cuisine, Y_vegetarian), (int2char, voc_ingredients, voc_names)
 
 
-def get_dataset(n_chars, case_sensitive, ds_parts='cuisine'):
+def get_dataset(n_chars, case_sensitive, ds_parts='cuisine', max_recipe_size=32, test_mode=False):
 
-    X, Y, voc = get_preliminary_dataset(PRELIMINARY_DATASET, name_th=5, max_text_size=n_chars,
-                                        case_sensitive=case_sensitive)
-
+    X, Y, voc = get_preliminary_dataset(PRELIMINARY_DATASET, name_th=5, max_text_size=n_chars,max_recipe_size=max_recipe_size,
+                                        case_sensitive=case_sensitive,test=test_mode)
+    Y_cuisine, Y_veg = Y[1], Y[2]
+    Y_cuisine =  np.array([0 if y == 0 else (1 if y == 3 else 2) for y in Y_cuisine.tolist()], dtype=np.int32)
     X_chars = X[0]
     alphabet = voc[0]
-    if ds_parts == 'both':
-        raise Exception("Cant train on both yet")
+    if ds_parts in ['union', 'intersect']:
+        Y = zip(Y_cuisine, Y_veg)
+        if ds_parts == 'union':
+            X,Y = create_sub_dataset(X_chars, Y, lambda y: (y[0] + y[1]) > 0, lambda y: (y[0]-1, y[1]-1))
+
+            return X, Y.astype(np.int32), alphabet
+        else:
+            X,Y = create_sub_dataset(X_chars, Y, lambda y: y[0] > 0 and y[1] > 0, lambda y: (y[0]-1, y[1]-1))
+            return X, Y.astype(np.int32), alphabet
     elif ds_parts == 'cuisine':
-        Y_cuisine = Y[1]
         X, Y = create_sub_dataset(X_chars, Y_cuisine, lambda y: y > 0, lambda y: y - 1)
-        Y = np.array([1 if y == 2 else 0 for y in Y.tolist()], dtype=np.int32)
+        Y = Y.astype(np.int32)
         return X,Y,alphabet
-    elif ds_parts == 'vegetarian':
-        Y_veg = Y[2]
+    elif ds_parts == 'vegatarian':
         X, Y = create_sub_dataset(X_chars, Y_veg, lambda y: y > 0, lambda y: y - 1)
         Y = Y.astype(np.int32)
         return X, Y, alphabet

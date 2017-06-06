@@ -11,7 +11,7 @@ import operator
 from chainer import dataset
 from chainer import datasets as D
 
-def create_alphabet(case_sensitive=True, digits=True, others="%.&[]()%!~-+ "):
+def create_alphabet(case_sensitive=True, digits=True, others="%.&[]()!~-+ "):
     """ Creates dictionary from character to integer index, also creates inverse
     """
     alphabet = "abcdefghijklmnopqrstuvwxyz"
@@ -152,7 +152,7 @@ def create_sub_dataset(X_chars, Y_old, cond=lambda y: True,new_y=lambda y: y):
     """ Creates dataset when y values corresponds to certain requirement"""
     Y = []
     X = []
-    for idx in xrange(Y_old.shape[0]):
+    for idx in xrange(len(Y_old)):
         y = Y_old[idx]
         if cond(y):
             Y.append(new_y(y))
