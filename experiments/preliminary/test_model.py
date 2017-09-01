@@ -9,7 +9,7 @@ import os
 path = os.path.join(dirname(dirname(realpath(__file__))), '../code')
 sys.path.append(path)
 from preliminary_dataset import get_dataset
-from dataset import  OneHotEncodingDataset, split_dataset, create_alphabet
+from dataset import  make_dataset, split_dataset
 import chainer
 import chainer.links as L
 import chainer.functions as F
@@ -38,6 +38,7 @@ def get_args():
     parser.add_argument('--momentum',type=float,default=.0)
     parser.add_argument('--case-sensitive',action='store_true')
     parser.add_argument('--num-chars',type=int, default=128)
+    parser.add_argument('--val-chars', type=int,default=None)
     parser.add_argument('--track-name',type=str,default=None)
     parser.add_argument('--take-model-snapshot',action='store_true')
     parser.add_argument('--ds-parts',type=str,default='cuisine')
@@ -46,20 +47,21 @@ def get_args():
     parser.add_argument('--acc-val',action='store_true')
     parser.add_argument('--acc-train', action='store_true')
     parser.add_argument('--no-validation',action='store_false')
-    parser.add_argument('--embed', type=int, default=None)
+    parser.add_argument('--embed', action='store_true')
     parser.add_argument('--num-ingredients', type=int, default=32)
+    parser.add_argument('--val-ingredients', type=int,default=16)
     parser.add_argument('--cus-factor', type=float, default=.5)
     parser.add_argument('--veg-factor', type=float, default=.5)
     return parser.parse_args()
 
-def train_model(model, X, Y, alphabet, multi_task, args):
+def train_model(model, X, Y, alphabet, multi_task, args,val_x=None,val_y=None):
     startDate = datetime.now()
     if args.track_name is not None:
         out = os.path.join(get_config().get("folder", "results_prefix"), startDate.strftime('%Y-%m-%d'),  args.track_name)
     else:
         out = os.path.join(get_config().get("folder", "results_prefix"), startDate.strftime('%Y-%m-%d'), startDate.strftime("%H-%M-%S"))
     a_size = len(alphabet) - 1 #alphabet contains 0 character for '', however we ignore that one
-    dataset = D.TupleDataset(OneHotEncodingDataset(X, a_size), Y)
+    dataset = make_dataset(X,Y,a_size,args.embed)
     # Make train, test and val set
     train, test, val = split_dataset(dataset)
     print len(train), len(test), len(val)
@@ -119,9 +121,30 @@ def train_model(model, X, Y, alphabet, multi_task, args):
     if args.no_validation:
         trainer.extend(E.Evaluator(
             val_iter, eval_model, device=args.gpu))
+
+    if args.val_ingredients is not None and args.val_chars is not None:
+        X, Y, alphabet = get_dataset(args.val_chars, args.case_sensitive, args.ds_parts, max_recipe_size=args.val_ingredients,
+                                     test_mode=args.test)
+        dataset = make_dataset(X,Y,a_size,args.embed)
+        # Make train, test and val set
+        train_2, tes_2, val_2 = split_dataset(dataset)
+        val2_iter = I.MultiprocessIterator(val_2, args.batch_size, shuffle=False, repeat=False)
+        eval2_model = classifier.copy()
+        eval2_model.compute_accuracy = args.acc_val
+        eval2_model.predictor.train = False
+        eval2_model.predictor.recipe_size = args.val_ingredients
+        eval2_model.predictor.ingredient.width = args.val_chars
+        ev2 = E.Evaluator(val2_iter, eval2_model, device=args.gpu)
+        ev2.default_name = 'validation_2nd'
+        trainer.extend(ev2)
+
+        fn_d = 'acc_2nd_%s.png' % date
+        acc_2nd = E.PlotReport(['validation_2nd/main/accuracy'], 'epoch', file_name=fn_d)
+        trainer.extend(acc_2nd)
+
     trainer.extend(E.dump_graph('main/loss'))
-    trainer.extend(E.ExponentialShift('lr', 0.33),
-                   trigger=(8, 'epoch'))
+    trainer.extend(E.ExponentialShift('lr', 0.5),
+                   trigger=(7, 'epoch'))
     #trainer.extend(E.snapshot(), trigger=val_interval)
     if args.take_model_snapshot:
         trainer.extend(E.snapshot_object(
@@ -131,7 +154,7 @@ def train_model(model, X, Y, alphabet, multi_task, args):
     trainer.extend(E.LogReport(trigger=log_interval))
     trainer.extend(E.observe_lr(), trigger=log_interval)
     trainer.extend(E.PrintReport([
-        'epoch', 'iteration', 'main/loss', 'validation/main/loss', 'validation/main/accuracy/veg','validation/main/accuracy/cuisine', 'lr', 'main/loss/cuisine','main/loss/veg'
+        'epoch', 'iteration', 'main/loss', 'validation/main/loss','validation_2nd/main/loss' 'validation/main/accuracy/veg','validation/main/accuracy/cuisine', 'lr', 'main/loss/cuisine','main/loss/veg'
     ]), trigger=log_interval)
     trainer.extend(loss_r)
     trainer.extend(lr_r)
@@ -155,13 +178,13 @@ def train_model(model, X, Y, alphabet, multi_task, args):
 def train(args):
     n_chars = args.num_chars
     X,Y,alphabet = get_dataset(n_chars, args.case_sensitive, args.ds_parts, max_recipe_size=args.num_ingredients,test_mode=args.test)
-    print Y.shape
     a_size = len(alphabet) -1
-
+    print len(X),len([1 for y in Y if y == 1]),len([1 for y in Y if y == 0])
     print "Alphabet consists of %d characters" % a_size
     mt = args.ds_parts in ['intersect', 'union']
 
-    model = build_model(a_size, 2, recipe_size=args.num_ingredients, recipe_type=args.recipe_type, ing_type=args.ingredient_type, num_chars=args.num_chars, multi_task=mt)
+
+    model = build_model(a_size, 2, recipe_size=args.num_ingredients, recipe_type=args.recipe_type, ing_type=args.ingredient_type, num_chars=args.num_chars, multi_task=mt,embed=args.embed)
     start = time.time()
     train_model(model, X, Y, alphabet, mt, args)
 

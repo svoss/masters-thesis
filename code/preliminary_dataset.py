@@ -158,7 +158,7 @@ def get_preliminary_dataset(dataset_url, case_sensitive=True, digits=True, other
     return (X_char, X_words), (Y_names, Y_cuisine, Y_vegetarian), (int2char, voc_ingredients, voc_names)
 
 
-def get_dataset(n_chars, case_sensitive, ds_parts='cuisine', max_recipe_size=32, test_mode=False):
+def get_dataset(n_chars, case_sensitive, ds_parts='cuisine', max_recipe_size=32, test_mode=False,val_chars=None):
 
     X, Y, voc = get_preliminary_dataset(PRELIMINARY_DATASET, name_th=5, max_text_size=n_chars,max_recipe_size=max_recipe_size,
                                         case_sensitive=case_sensitive,test=test_mode)

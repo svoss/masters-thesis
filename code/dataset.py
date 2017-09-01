@@ -10,8 +10,10 @@ import numpy as np
 import operator
 from chainer import dataset
 from chainer import datasets as D
+from config import get_mongo_db,get_mongo_client
 
-def create_alphabet(case_sensitive=True, digits=True, others="%.&[]()!~-+ "):
+
+def create_alphabet(case_sensitive=True, digits=True, others="%.&[]()!~-+ ",do_unicode=False):
     """ Creates dictionary from character to integer index, also creates inverse
     """
     alphabet = "abcdefghijklmnopqrstuvwxyz"
@@ -20,6 +22,9 @@ def create_alphabet(case_sensitive=True, digits=True, others="%.&[]()!~-+ "):
     if digits:
         alphabet += "0123456789"
     alphabet += others
+    if do_unicode:
+        alphabet = unicode(alphabet)
+
     # 0 is catch all
     return dict([(a,i+1) for i,a in enumerate(alphabet)]), dict([(i+1,a) for i,a in enumerate(alphabet)])
 
@@ -191,6 +196,52 @@ def split_dataset(dataset, train_frac=.8, test_frac=.5):
     test, val = D.split_dataset(rest, test_end)
     return train, test, val
 
+
+def make_dataset(X,Y,a_size,embed=False):
+    if embed:
+        dataset = D.TupleDataset(X.astype(np.int32), Y)
+    else:
+        dataset = D.TupleDataset(OneHotEncodingDataset(X, a_size), Y)
+    return dataset
+
+
+class MongoDBDataset(dataset.DatasetMixin):
+    """ Dataset type streams documents from mongodb query
+    """
+    def __init__(self, collection, ids):
+        self.ids = ids
+        self.collection = collection
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, index):
+        """
+        If index is slice will return N+1 dimensions, if scalar will return N dimensions. Second dimension will be vector_size
+        :param index: 
+        :return: 
+        """
+
+        if isinstance(index,slice):
+            return self.collection.find({'_id':{"$in": self.ids[index]}})
+        else:
+            return self.collection.find_one({'_id':self.ids[index]})
+
+
+def build_mongo_datasets(collection, query,val_frac=.1, test_frac=.1,limit_to=None):
+    q = collection.find(query,{"_id":1})
+    ids = []
+    for d in q:
+        ids.append(d['_id'])
+        if limit_to is not None:
+            limit_to -= 1
+            if limit_to < 1:
+                break
+    start_val = int((1.-(val_frac + test_frac)) * len(ids))
+    start_test = int((1.-test_frac) * len(ids))
+
+    train, val, test = ids[0:start_val],ids[start_val:start_test],ids[start_test:-1]
+    return train,val,test
 
 class OneHotEncodingDataset(dataset.DatasetMixin):
     """ Class that converts integers to one-hot-encoded vectors. 0's will be encoded as all 0's"""
