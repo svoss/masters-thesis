@@ -1,7 +1,11 @@
 [folder]
-prefix=
+results_prefix =
+cache_prefix=
 
+[slack]
+channel=
+api_token=
 
-
-
-
+[mongodb]
+host=mongodb://localhost:27017/
+db=thesis
