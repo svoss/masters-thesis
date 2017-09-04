@@ -36,7 +36,7 @@ class YContinuesEncoder(BaseYEncoder):
         for recipe in recipes:
             y = self._get_fields(recipe)
             if self.multiply_with_recipe_yield:
-                y = [a * recipe['parsed']['recipe_yield'] * 0.001 for a in y]
+                y = [a * recipe['parsed']['recipe_yield'] * 0.01 for a in y]
             if len(y) < 2:
                 Y.append(y[0])
             else:

@@ -41,6 +41,9 @@ def build_args():
     parser.add_argument('--load-model',type=str,default=None)
     parser.add_argument('--save-intermediate',type=int, default=None)
     parser.add_argument('--resume-from-iteration',type=int, default=None)
+    parser.add_argument('--validate-on-mae', action='store_true')
+    parser.add_argument('--mae', action='store_true')
+    parser.add_argument('--multiplication', action='store_true')
     return parser.parse_args()
 
 def train_model(model, (train,val,test), args):
@@ -68,7 +71,11 @@ def train_model(model, (train,val,test), args):
     fn_c = 'acc.png'
     lr_r = E.PlotReport(['lr'], 'epoch', file_name=fn_b)
     loss_r = E.PlotReport(['validation/main/loss', 'main/loss'], 'epoch', file_name=fn_a)
-    acc_r = E.PlotReport(['validation/main/accuracy','main/accuracy'],'epoch',file_name=fn_c)
+    if args.categories is not None:
+        acc_r = E.PlotReport(['validation/main/accuracy','main/accuracy'],'epoch',file_name=fn_c)
+    else:
+        acc_r = E.PlotReport(['main/mae','validation/main/mae'],'epoch',file_name=fn_c)
+
     if args.gpu >= 0:
         model.to_gpu(args.gpu)
     print "Model intialized, epochs: %d" % args.epochs
@@ -77,7 +84,10 @@ def train_model(model, (train,val,test), args):
 
     # prepare model for evaluation
     eval_model = model.copy()
+    eval_model.train = False
     eval_model.predictor.train = False
+
+    print eval_model.train, model.train
 
     updater = T.StandardUpdater(train_iter, optimizer, device=args.gpu)
     trainer = T.Trainer(updater, (args.epochs, 'epoch'), out)
@@ -89,7 +99,7 @@ def train_model(model, (train,val,test), args):
             val_iter, eval_model, device=args.gpu))
 
     trainer.extend(E.dump_graph('main/loss'))
-    trainer.extend(E.ExponentialShift('lr', 0.75), trigger=(4, 'epoch'))
+    trainer.extend(E.ExponentialShift('lr', 0.1), trigger=(2, 'epoch'))
     if args.save_intermediate is not None:
         print "saving intermediate results"
         trainer.extend(E.snapshot(), trigger=(args.save_intermediate,'epoch'))
@@ -100,9 +110,13 @@ def train_model(model, (train,val,test), args):
     # (it determines when to emit log rather than when to read observations)
     trainer.extend(E.LogReport(trigger=log_interval))
     trainer.extend(E.observe_lr(), trigger=log_interval)
-    trainer.extend(E.PrintReport([
-        'epoch', 'iteration', 'main/loss', 'validation/main/loss','lr','main/accuracy','validation/main/accuracy'
-    ]), trigger=log_interval)
+    vals = ['epoch', 'iteration', 'main/loss', 'validation/main/loss','lr']
+    if args.categories is not None:
+        vals += ['main/accuracy','validation/main/accuracy']
+    else:
+        vals += ['main/mae','validation/main/mae']
+
+    trainer.extend(E.PrintReport(vals), trigger=log_interval)
     trainer.extend(loss_r)
     trainer.extend(lr_r)
     if args.no_validation:
@@ -127,10 +141,42 @@ def train_model(model, (train,val,test), args):
         json.dump(logs, io)
 
 
+def generate_random_test_dataset(N=10000):
+    import numpy as np
+    Y = np.random.randint(0,10,N)
+    Y = Y.astype(np.float32)
+    X = []
+    for i in xrange(0,N):
+        y = int(Y[i])
+        a = []
+        for j in xrange(0,24):
+            b = []
+            for k in xrange(0,96):
+                c =  np.zeros((10,))
+                c[y] = 1
+                b.append(c)
+            a.append(b)               
+        X.append(a)
+
+    X = np.array(X, np.float32)
+    X = np.rollaxis(X, 3, 1)
+    Y = Y.astype(np.float32)
+    from chainer.datasets import TupleDataset,split_dataset_random
+    ds = TupleDataset(X,Y)
+    train, val = split_dataset_random(ds, int(N*.9))
+
+    return train, val, [], 10 
+
 if __name__ == "__main__":
     args = build_args()
-    train, val, test, alphabet_size = get_nutrition_dataset(args)
+    #train, val, test, alphabet_size = generate_random_test_dataset(5000)
+    #import numpy as np
+    #for i in xrange(0,18):
+    #    x,y = train[i][0], train[i][1]
+    #    summed = np.sum(np.sum(x,0),0)
 
+    #    print int(y*5.), np.argwhere(summed > 0)
+    train, val, test, alphabet_size = get_nutrition_dataset(args)
     print "Training/validation/test size: %d/%d/%d " % (len(train), len(val), len(test))
     model = get_nutrition_model(args, alphabet_size)
     train_model(model, (train,val,test), args)

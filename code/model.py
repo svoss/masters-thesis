@@ -418,7 +418,6 @@ class SimpleIngredient(BaseIngredientSentence):
         )
 
     def _get_layer(self, input, factor = 1):
-        print self.layer_type
         if self.layer_type.startswith('multiple'):
             print "Adding multiple layer with factor %d to network" % factor
             return  NaiveWider1DInceptionLayer(input, 8 * factor, 16 * factor, 24 * factor, 32 * factor, 32 * factor, 32 * factor, 24 * factor), 168*factor
@@ -451,7 +450,7 @@ class SimpleIngredient(BaseIngredientSentence):
 
 
 class NutritionRegressionIngredient(BaseIngredientSentence):
-    def __init__(self, alphabet_size, output_size, recipe_size, num_chars, depth='one', layer_type='multiple-filters',train=False):
+    def __init__(self, alphabet_size, output_size, recipe_size, num_chars, depth='one', layer_type='multiple-filters',train=False, multiplication=False):
 
         self.output_size = output_size
         self.recipe_size = recipe_size
@@ -459,6 +458,7 @@ class NutritionRegressionIngredient(BaseIngredientSentence):
         self.width = num_chars
         self.layer_type = layer_type
         self.depth = depth
+        self.multiplication = multiplication
         kwargs = {}
         input = alphabet_size
         if self.depth in ['zero','one','two','three']:
@@ -481,7 +481,11 @@ class NutritionRegressionIngredient(BaseIngredientSentence):
             kwargs['l5'],input = self._get_layer(input, 4)
 
         kwargs['conv_full_0'] = L.Convolution2D(input,input,(1,1))
-        kwargs['conv_full_1'] = L.Convolution2D(input,1,(1,1))
+        if self.multiplication == False:
+            kwargs['conv_full_1'] = L.Convolution2D(input,1,(1,1))
+        else:
+            kwargs['conv_full_1'] = L.Convolution2D(input,3,(1,1))
+
         super(NutritionRegressionIngredient, self).__init__(
             train=train,
             alphabet_size=alphabet_size,
@@ -522,7 +526,11 @@ class NutritionRegressionIngredient(BaseIngredientSentence):
     
         h = F.max_pooling_2d(h, (1, self.width))
         h = self.conv_full_0(h)
-        h = self.conv_full_1(h)
+        h = F.relu(self.conv_full_1(h))
+        if self.multiplication:
+            print h.shape
+            import sys
+            sys.exit()
         h = F.reshape(h, h.shape[:-1])
         return h
 
@@ -542,11 +550,15 @@ class SummedRegressionRecipe(BaseRecipe):
 
         return x
 
+
 class RMSE(chainer.Chain):
 
-    def __init__(self, predictor,output_size):
+    def __init__(self, predictor,output_size,calculate_mae=False):
         super(RMSE, self).__init__(predictor=predictor)
         self.output_size = output_size
+        self.train = True
+        self.calculate_mae = calculate_mae
+
 
     def __call__(self, *args):
         x = args[:-1]
@@ -560,12 +572,38 @@ class RMSE(chainer.Chain):
             t = F.flatten(t)
         self.loss = F.sqrt(F.mean_squared_error(self.y, t))
         reporter.report({'loss': self.loss}, self)
+
+        if self.calculate_mae:
+            self.mae = F.mean_absolute_error(self.y, t)
+            reporter.report({'mae': self.mae}, self)
         return self.loss
 
+class MAE(chainer.Chain):
+
+    def __init__(self, predictor,output_size):
+        super(MAE, self).__init__(predictor=predictor)
+        self.output_size = output_size
+        self.train = True
+
+    def __call__(self, *args):
+        x = args[:-1]
+        t = args[-1]
+        self.y = None
+        self.loss = None
+        self.accuracy = None
+        self.y = self.predictor(*x)
+        if self.output_size == 1:
+            self.y = F.flatten(self.y)
+            t = F.flatten(t)
+        self.loss = F.mean_absolute_error(self.y, t)
+        reporter.report({'loss': self.loss}, self)
+        reporter.report({'mae': self.loss}, self)
+        return self.loss
 
 def get_nutrition_model(args, alphabet_size):
     from commoncrawl_dataset import get_fields
-    fields = get_fields(args.dataset)
+    fields, add_recipe_yield, union = get_fields(args.dataset)
+    n_fields = len(fields) + (1 if add_recipe_yield else 0)
     network = args.network
     parts = network.split("-")
     types = {
@@ -575,9 +613,13 @@ def get_nutrition_model(args, alphabet_size):
     layer_type = types[parts[-2]] if parts[-2] in types else '3x3'
 
     if args.categories is None:
-        ingredient = NutritionRegressionIngredient(alphabet_size, len(fields), args.num_ingredients, args.num_chars, parts[-1], layer_type)
+
+        ingredient = NutritionRegressionIngredient(alphabet_size, n_fields, args.num_ingredients, args.num_chars, parts[-1], layer_type, multiplication=args.multiplication)
         recipe = SummedRegressionRecipe(True,recipe_size=args.num_ingredients, ingredient=ingredient)
-        model = RMSE(recipe, len(fields))
+        if not args.mae:
+            model = RMSE(recipe, n_fields, calculate_mae=args.validate_on_mae )
+        else:
+            model = MAE(recipe, n_fields)
     else:
         ing = SimpleIngredient(True, alphabet_size, embed_input=False, depth=parts[-1], width=args.num_chars, inception=True, layer_type=layer_type)
         recipe = PooledRecipeCuisine(True, args.num_ingredients, ing, args.categories, 'both', 1024)
@@ -683,8 +725,6 @@ class Classifier(link.Chain):
         self.loss = None
         self.accuracy = None
         self.y = self.predictor(*x)
-        print len(self.y.shape)
-        print len(t.shape)
         self.loss = self.lossfun(self.y, t)
         reporter.report({'loss': self.loss}, self)
         if self.compute_accuracy:
