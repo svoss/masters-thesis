@@ -5,7 +5,7 @@ from chainer import dataset
 import numpy as np
 import math
 import operator
-
+DEFAULT_RY_CLASSES = [(0,1,1),(2,3,2),(4,4,4),(5,6,6),(7,8,8),(9,11,10),(12,14,12),(15,19,16),(20,29,22),(30,72,42)]
 class BaseYEncoder(object):
     def _get_fields(self, recipe):
         return [self._get_field(recipe,f) for f in self.fields]
@@ -24,7 +24,6 @@ class BaseYEncoder(object):
 class YContinuesEncoder(BaseYEncoder):
     def __init__(self, fields, add_recipe_yield=False, multiply_with_recipe_yield = True):
         self.fields = fields
-
         self.add_recipe_yield = add_recipe_yield
         self.multiply_with_recipe_yield = multiply_with_recipe_yield
 
@@ -49,28 +48,28 @@ class YContinuesEncoder(BaseYEncoder):
             return np.array(Y[0],np.float32)
 
 class YCategorizedEncoder(BaseYEncoder):
-    def __init__(self, num_categories, fields, add_recipe_yield=False, multiply_with_recipe_yield = True):
+    def __init__(self, num_categories, fields, add_recipe_yield=False, multiply_with_recipe_yield=True,ry_classes=None):
         self.fields = fields
         self.add_recipe_yield = add_recipe_yield
         self.multiply_with_recipe_yield = multiply_with_recipe_yield
         self.classes = {}
+        self.ry_classes = ry_classes
         self.num_categories = num_categories
 
     def prepare_classes(self, all_recipes):
         values = dict([(f,[]) for f in self.fields])
-        if self.add_recipe_yield:
-            values['recipe_yield'] = []
         c = 0
         for r in all_recipes:
             c += 1
             recipe_yield = self._get_field(r, 'parsed.recipe_yield')
-            if self.add_recipe_yield:
-                values['recipe_yield'].append(recipe_yield)
             for f in self.fields:
                 x = self._get_field(r, f)
                 if x is not None:
                     values[f].append(x * recipe_yield)
         self.classes = dict([(f,self._build_classes(L)) for f,L in values.iteritems()])
+        if self.add_recipe_yield:
+            self.classes['parsed.recipe_yield'] = self.ry_classes
+        print self.classes
 
     def _build_classes(self, values):
         values = sorted(values)
@@ -88,10 +87,10 @@ class YCategorizedEncoder(BaseYEncoder):
 
     def _search_classes(self, Y):
         y_new = []
-        F = self.fields
+        F = self.fields[:]
         if self.add_recipe_yield:
-            F.append('recipe_yield')
-        for i,f in enumerate(self.fields):
+            F.append('parsed.recipe_yield')
+        for i,f in enumerate(F):
             y = Y[i]
             classes = self.classes[f]
             for ci,c in enumerate(classes):
@@ -112,16 +111,19 @@ class YCategorizedEncoder(BaseYEncoder):
             y = self._get_fields(recipe)
             ry = recipe['parsed']['recipe_yield']
             if self.multiply_with_recipe_yield:
-                y = [a * ry for a in y]
+                y = [-1 if a is None else a * ry for a in y]
 
             if self.add_recipe_yield:
                 y.append(ry)
 
+
             y = self._search_classes(y)
+
             if len(y) < 2:
                 Y.append(y[0])
             else:
                 Y.append(y)
+
         if len(Y) > 1:
             print "Multiple",len(Y)
             return np.array(Y, np.int32)
@@ -259,7 +261,7 @@ def get_nutrition_dataset(args):
     if args.categories is None:
         encoder = YContinuesEncoder(fields, add_recipe_yield)
     else:
-        encoder = YCategorizedEncoder(args.categories,fields,add_recipe_yield)
+        encoder = YCategorizedEncoder(args.categories,fields,add_recipe_yield,ry_classes=DEFAULT_RY_CLASSES)
         encoder.prepare_classes(collection.find(query))
 
     datasets = [DocumentEncodingDataset(x, args.num_chars, args.num_ingredients, encoder) for x in datasets]
@@ -270,10 +272,9 @@ def get_nutrition_dataset(args):
     return train, val, test, alphabet_size
 
 if __name__ == "__main__":
-    encoder = YCategorizedEncoder(3, ['a','b'])
+    encoder = YCategorizedEncoder(3, ['a'], add_recipe_yield=True, ry_classes=DEFAULT_RY_CLASSES)
     a = [1,1,1,1,1,2,3,4,5,6,7,10,14,18]
     b = [8,8.5,9,9.5,10,90,95,100,105,110,900,950,1000,1100]
-    test = [{'a':a[i], 'b':b[i],'parsed':{'recipe_yield':10.0}} for i in xrange(0,14)]
+    test = [{'a':a[i], 'b':b[i],'parsed':{'recipe_yield':i}} for i in xrange(0,14)]
     encoder.prepare_classes(test)
-    print encoder.classes
-    print encoder([test[0],test[10],test[5]])
+    print encoder([test[4],test[10],test[5]])

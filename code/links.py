@@ -36,7 +36,7 @@ class MultiTaskClassifier(link.Chain):
         self.factors = [t['factor'] for t in tasks]
         self.tasks = tasks
         self.multitask = MultiTaskLoss(self.factors)
-
+        self.train = True
 
     def __call__(self, *args):
         """Computes the loss value for an input and label pair.

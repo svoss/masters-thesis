@@ -9,7 +9,7 @@ path = os.path.join(dirname(dirname(realpath(__file__))), '../code')
 sys.path.append(path)
 import argparse
 from dataset import print_recipe_oe
-from commoncrawl_dataset import get_nutrition_dataset
+from commoncrawl_dataset import get_nutrition_dataset,get_fields
 from model import get_nutrition_model
 import chainer.training.extensions as E
 import chainer.iterators as I
@@ -41,6 +41,8 @@ def build_args():
     parser.add_argument('--load-model',type=str,default=None)
     parser.add_argument('--save-intermediate',type=int, default=None)
     parser.add_argument('--resume-from-iteration',type=int, default=None)
+    parser.add_argument('--date',type=str, default=None)
+    parser.add_argument('--split',type=str, default='early')
     return parser.parse_args()
 
 def train_model(model, (train,val,test), args):
@@ -49,10 +51,13 @@ def train_model(model, (train,val,test), args):
             sys.exit("Path %s does not exist" % (args.load_model))
 
     startDate = datetime.now()
+    datestr = startDate.strftime('%Y-%m-%d')
+    if args.date is not None:
+        datestr = args.date
     if args.track_name is not None:
-        out = os.path.join(get_config().get("folder", "results_prefix"), startDate.strftime('%Y-%m-%d'),  args.track_name)
+        out = os.path.join(get_config().get("folder", "results_prefix"), datestr,  args.track_name)
     else:
-        out = os.path.join(get_config().get("folder", "results_prefix"), startDate.strftime('%Y-%m-%d'), startDate.strftime("%H-%M-%S"))
+        out = os.path.join(get_config().get("folder", "results_prefix"), datestr, startDate.strftime("%H-%M-%S"))
 
     # Make train, test and val set
     logs = {'train':len(train), 'test':len(test), 'val':len(val)}
@@ -69,6 +74,7 @@ def train_model(model, (train,val,test), args):
     lr_r = E.PlotReport(['lr'], 'epoch', file_name=fn_b)
     loss_r = E.PlotReport(['validation/main/loss', 'main/loss'], 'epoch', file_name=fn_a)
     acc_r = E.PlotReport(['validation/main/accuracy','main/accuracy'],'epoch',file_name=fn_c)
+
     if args.gpu >= 0:
         model.to_gpu(args.gpu)
     print "Model intialized, epochs: %d" % args.epochs
@@ -87,7 +93,15 @@ def train_model(model, (train,val,test), args):
     if args.no_validation:
         trainer.extend(E.Evaluator(
             val_iter, eval_model, device=args.gpu))
-
+    if args.dataset == 'the-five-union':
+        fields = ['calories', 'cholesterol','protein','transFat','recipeYield']
+        for f in fields:
+            fn_x = 'loss.%s.png' % f
+            fn_y = 'acc.%s.png' % f
+            loss_x = E.PlotReport(['validation/main/loss/' + f, 'main/loss/' + f], 'epoch', file_name=fn_x)
+            acc_y = E.PlotReport(['validation/main/accuracy/' + f, 'main/accuracy/' + f], 'epoch', file_name=fn_y)
+            trainer.extend(loss_x)
+            trainer.extend(acc_y)
     trainer.extend(E.dump_graph('main/loss'))
     trainer.extend(E.ExponentialShift('lr', 0.75), trigger=(4, 'epoch'))
     if args.save_intermediate is not None:
