@@ -264,6 +264,205 @@ class MultiTaskPool(BaseRecipe):
 
         return F.dstack((a,b))
 
+class MultiTaskPoolFiveLaterSplit(BaseRecipe):
+    def __init__(self, train, recipe_size, ingredient, output_size, pooling_type='max', features=1024):
+        self.pooling_type = pooling_type
+        self.features = features
+        self.recipe_size = recipe_size
+        self.output_size = output_size
+        ouf = ingredient.out_feature * (2 if pooling_type == 'both' else 1)
+        super(MultiTaskPoolFiveLaterSplit, self).__init__(
+            train=train,
+            recipe_size=recipe_size,
+            ingredient=ingredient,
+            fc=L.Linear(ouf, self.features),
+            fc_A_1=L.Linear(self.features, self.features),
+            fc_A_2=L.Linear(self.features, self.output_size),
+
+            fc_B_1=L.Linear(self.features, self.features),
+            fc_B_2=L.Linear(self.features, self.output_size),
+
+            fc_C_1=L.Linear(self.features, self.features),
+            fc_C_2=L.Linear(self.features, self.output_size),
+
+            fc_D_1=L.Linear(self.features, self.features),
+            fc_D_2=L.Linear(self.features, self.output_size),
+
+            fc_E_1=L.Linear(self.features, self.features),
+            fc_E_2=L.Linear(self.features, self.output_size)
+        )
+
+        self.max = F.MaxPooling2D((recipe_size, 1))
+        self.avg = F.AveragePooling2D((recipe_size, 1))
+
+    def __call__(self, x):
+        h = self.ingredient(x)
+        if self.pooling_type == 'max':
+            h = self.max(h)
+        elif self.pooling_type == 'avg':
+            h = self.avg(h)
+        elif self.pooling_type == 'both':
+            h1 = self.max(h)
+            h2 = self.avg(h)
+            h = F.array.concat.concat((h1, h2), 1)
+
+        h = F.dropout(F.relu(self.fc(h)), train=self.train, ratio=0.5)
+
+        #path a
+        a = F.dropout(F.relu(self.fc_A_1(h)), train=self.train, ratio=0.5)
+        a = self.fc_A_2(a)
+
+        b = F.dropout(F.relu(self.fc_B_1(h)), train=self.train, ratio=0.5)
+        b = self.fc_B_2(b)
+
+        c = F.dropout(F.relu(self.fc_C_1(h)), train=self.train, ratio=0.5)
+        c = self.fc_C_2(c)
+
+        d = F.dropout(F.relu(self.fc_D_1(h)), train=self.train, ratio=0.5)
+        d = self.fc_D_2(d)
+
+        e = F.dropout(F.relu(self.fc_E_1(h)), train=self.train, ratio=0.5)
+        e = self.fc_E_2(e)
+        return F.dstack((a,b,c,d,e))
+
+
+class MultiTaskPoolFive(BaseRecipe):
+    def __init__(self, train, recipe_size, ingredient, output_size, pooling_type='max', features=1024):
+        self.pooling_type = pooling_type
+        self.features = features
+        self.recipe_size = recipe_size
+        self.output_size = output_size
+        ouf = ingredient.out_feature * (2 if pooling_type == 'both' else 1)
+        super(MultiTaskPoolFive, self).__init__(
+            train=train,
+            recipe_size=recipe_size,
+            ingredient=ingredient,
+            fc_A_0=L.Linear(ouf, self.features),
+            fc_A_1=L.Linear(self.features, self.features),
+            fc_A_2=L.Linear(self.features, self.output_size),
+
+            fc_B_0=L.Linear(ouf, self.features),
+            fc_B_1=L.Linear(self.features, self.features),
+            fc_B_2=L.Linear(self.features, self.output_size),
+
+            fc_C_0=L.Linear(ouf, self.features),
+            fc_C_1=L.Linear(self.features, self.features),
+            fc_C_2=L.Linear(self.features, self.output_size),
+
+            fc_D_0=L.Linear(ouf, self.features),
+            fc_D_1=L.Linear(self.features, self.features),
+            fc_D_2=L.Linear(self.features, self.output_size),
+
+            fc_E_0=L.Linear(ouf, self.features),
+            fc_E_1=L.Linear(self.features, self.features),
+            fc_E_2=L.Linear(self.features, self.output_size)
+        )
+
+        self.max = F.MaxPooling2D((recipe_size, 1))
+        self.avg = F.AveragePooling2D((recipe_size, 1))
+
+    def __call__(self, x):
+        h = self.ingredient(x)
+        if self.pooling_type == 'max':
+            h = self.max(h)
+        elif self.pooling_type == 'avg':
+            h = self.avg(h)
+        elif self.pooling_type == 'both':
+            h1 = self.max(h)
+            h2 = self.avg(h)
+            h = F.array.concat.concat((h1, h2), 1)
+
+
+        #path a
+        a = F.dropout(F.relu(self.fc_A_0(h)), train=self.train, ratio=0.5)
+        a = F.dropout(F.relu(self.fc_A_1(a)), train=self.train, ratio=0.5)
+        a = self.fc_A_2(a)
+
+        b = F.dropout(F.relu(self.fc_B_0(h)), train=self.train, ratio=0.5)
+        b = F.dropout(F.relu(self.fc_B_1(b)), train=self.train, ratio=0.5)
+        b = self.fc_B_2(b)
+
+        c = F.dropout(F.relu(self.fc_C_0(h)), train=self.train, ratio=0.5)
+        c = F.dropout(F.relu(self.fc_C_1(c)), train=self.train, ratio=0.5)
+        c = self.fc_C_2(c)
+
+        d = F.dropout(F.relu(self.fc_D_0(h)), train=self.train, ratio=0.5)
+        d = F.dropout(F.relu(self.fc_D_1(d)), train=self.train, ratio=0.5)
+        d = self.fc_D_2(d)
+
+        e = F.dropout(F.relu(self.fc_E_0(h)), train=self.train, ratio=0.5)
+        e = F.dropout(F.relu(self.fc_E_1(e)), train=self.train, ratio=0.5)
+        e = self.fc_E_2(e)
+        return F.dstack((a,b,c,d,e))
+
+class MultiTaskPoolFive(BaseRecipe):
+    def __init__(self, train, recipe_size, ingredient, output_size, pooling_type='max', features=1024):
+        self.pooling_type = pooling_type
+        self.features = features
+        self.recipe_size = recipe_size
+        self.output_size = output_size
+        ouf = ingredient.out_feature * (2 if pooling_type == 'both' else 1)
+        super(MultiTaskPoolFive, self).__init__(
+            train=train,
+            recipe_size=recipe_size,
+            ingredient=ingredient,
+            fc_A_0=L.Linear(ouf, self.features),
+            fc_A_1=L.Linear(self.features, self.features),
+            fc_A_2=L.Linear(self.features, self.output_size),
+
+            fc_B_0=L.Linear(ouf, self.features),
+            fc_B_1=L.Linear(self.features, self.features),
+            fc_B_2=L.Linear(self.features, self.output_size),
+
+            fc_C_0=L.Linear(ouf, self.features),
+            fc_C_1=L.Linear(self.features, self.features),
+            fc_C_2=L.Linear(self.features, self.output_size),
+
+            fc_D_0=L.Linear(ouf, self.features),
+            fc_D_1=L.Linear(self.features, self.features),
+            fc_D_2=L.Linear(self.features, self.output_size),
+
+            fc_E_0=L.Linear(ouf, self.features),
+            fc_E_1=L.Linear(self.features, self.features),
+            fc_E_2=L.Linear(self.features, self.output_size)
+        )
+
+        self.max = F.MaxPooling2D((recipe_size, 1))
+        self.avg = F.AveragePooling2D((recipe_size, 1))
+
+    def __call__(self, x):
+        h = self.ingredient(x)
+        if self.pooling_type == 'max':
+            h = self.max(h)
+        elif self.pooling_type == 'avg':
+            h = self.avg(h)
+        elif self.pooling_type == 'both':
+            h1 = self.max(h)
+            h2 = self.avg(h)
+            h = F.array.concat.concat((h1, h2), 1)
+
+
+        #path a
+        a = F.dropout(F.relu(self.fc_A_0(h)), train=self.train, ratio=0.5)
+        a = F.dropout(F.relu(self.fc_A_1(a)), train=self.train, ratio=0.5)
+        a = self.fc_A_2(a)
+
+        b = F.dropout(F.relu(self.fc_B_0(h)), train=self.train, ratio=0.5)
+        b = F.dropout(F.relu(self.fc_B_1(b)), train=self.train, ratio=0.5)
+        b = self.fc_B_2(b)
+
+        c = F.dropout(F.relu(self.fc_C_0(h)), train=self.train, ratio=0.5)
+        c = F.dropout(F.relu(self.fc_C_1(c)), train=self.train, ratio=0.5)
+        c = self.fc_C_2(c)
+
+        d = F.dropout(F.relu(self.fc_D_0(h)), train=self.train, ratio=0.5)
+        d = F.dropout(F.relu(self.fc_D_1(d)), train=self.train, ratio=0.5)
+        d = self.fc_D_2(d)
+
+        e = F.dropout(F.relu(self.fc_E_0(h)), train=self.train, ratio=0.5)
+        e = F.dropout(F.relu(self.fc_E_1(e)), train=self.train, ratio=0.5)
+        e = self.fc_E_2(e)
+        return F.dstack((a,b,c,d,e))
 
 class NaiveWider1DInceptionLayer(chainer.Chain):
     def __init__(self, in_channels, out1, out2, out3, out4, out5, out6, out7, conv_init=None, bias_init=None):
@@ -622,8 +821,35 @@ def get_nutrition_model(args, alphabet_size):
             model = MAE(recipe, n_fields)
     else:
         ing = SimpleIngredient(True, alphabet_size, embed_input=False, depth=parts[-1], width=args.num_chars, inception=True, layer_type=layer_type)
-        recipe = PooledRecipeCuisine(True, args.num_ingredients, ing, args.categories, 'both', 1024)
-        model = L.Classifier(recipe)
+        if args.dataset != 'the-five-union':
+            recipe = PooledRecipeCuisine(True, args.num_ingredients, ing, args.categories, 'both', 1024)
+            model = L.Classifier(recipe)
+        else:
+            tasks = [
+                {'name': 'calories', 'factor': .2,
+                 'loss_fun': F.loss.softmax_cross_entropy.softmax_cross_entropy,
+                 'acc_fun': F.evaluation.accuracy.Accuracy(ignore_label=-1)},
+                {'name': 'cholesterol', 'factor': .2,
+                 'loss_fun': F.loss.softmax_cross_entropy.softmax_cross_entropy,
+                 'acc_fun': F.evaluation.accuracy.Accuracy(ignore_label=-1)},
+                {'name': 'protein', 'factor': .2,
+                 'loss_fun': F.loss.softmax_cross_entropy.softmax_cross_entropy,
+                 'acc_fun': F.evaluation.accuracy.Accuracy(ignore_label=-1)},
+                {'name': 'transFat', 'factor': .2,
+                 'loss_fun': F.loss.softmax_cross_entropy.softmax_cross_entropy,
+                 'acc_fun': F.evaluation.accuracy.Accuracy(ignore_label=-1)},
+
+                {'name': 'recipeYield', 'factor': .2,
+                 'loss_fun': F.loss.softmax_cross_entropy.softmax_cross_entropy,
+                 'acc_fun': F.evaluation.accuracy.Accuracy(ignore_label=-1)}
+            ]
+            if args.split == 'early':
+                recipe = MultiTaskPoolFive(True, args.num_ingredients, ing, args.categories, 'both', 1024)
+            else:
+                recipe = MultiTaskPoolFiveLaterSplit(True, args.num_ingredients, ing, args.categories, 'both', 1024)
+
+            from links import MultiTaskClassifier
+            model = MultiTaskClassifier(recipe, tasks)
     return model
 
 def build_model(alphabet_size, output_size, recipe_size=32, recipe_type='fc', ing_type='wide', num_chars=128, embed=False, multi_task=False, load_file=None):
